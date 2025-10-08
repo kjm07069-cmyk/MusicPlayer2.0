@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Metro's Music Player</title>
+<style>
+body { margin:0; height:100vh; background:black; overflow:hidden; font-family:Arial,sans-serif; color:white; display:flex;}
+canvas { position:fixed; top:0; left:0; width:100%; height:100%; z-index:-1; }
+
+#songsToggle{position:fixed;top:90px;left:20px;z-index:3;padding:10px 20px;border:1px solid #fff;border-radius:25px;background:transparent;color:#fff;cursor:pointer;text-shadow:0 0 10px #fff;box-shadow:0 0 10px #fff;transition:all 0.3s ease;}
+#songsToggle:hover{color:#0ff;text-shadow:0 0 20px #0ff;box-shadow:0 0 20px #0ff;}
+
+#songMenuContainer{position:fixed;top:50%;left:-100%;transform:translateY(-50%);width:25%;height:80%;background:rgba(0,0,0,0.9);border:1px solid #fff;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:15px;padding:20px;z-index:2;transition:left 0.3s ease;}
+#songMenuContainer.show{left:0;}
+
+.song-menu button{padding:10px 20px;border:1px solid #fff;border-radius:20px;font-size:16px;cursor:pointer;color:#fff;background:transparent;text-align:center;width:80%;text-shadow:0 0 10px #fff,0 0 20px #fff;box-shadow:0 0 10px #fff,0 0 20px #fff;transition:all 0.3s ease;}
+.song-menu button:hover{color:#0ff;text-shadow:0 0 20px #0ff;box-shadow:0 0 20px #0ff;}
+.song-menu button.active{color:#0ff;text-shadow:0 0 20px #0ff;box-shadow:0 0 20px #0ff;}
+
+.controls{margin:auto;display:flex;flex-direction:column;align-items:center;text-align:center;z-index:1;}
+h1{font-size:1.5rem;margin-bottom:10px;color:#fff;text-shadow:0 0 10px #fff,0 0 20px #fff,0 0 30px #fff;}
+button,input[type="range"]{margin:5px;padding:8px 18px;border:1px solid #fff;border-radius:25px;font-size:14px;cursor:pointer;color:#fff;background:transparent;text-shadow:0 0 10px #fff,0 0 20px #fff;box-shadow:0 0 10px #fff,0 0 20px #fff;transition:all 0.3s ease;}
+input[type="range"]{width:200px;padding:0;border-radius:10px;-webkit-appearance:none;background:#222;transition:all 0.2s;}
+input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;background:#fff;border-radius:50%;cursor:pointer;box-shadow:0 0 10px #fff;transition:all 0.2s;}
+input[type="range"]::-moz-range-thumb{width:15px;height:15px;background:#fff;border-radius:50%;cursor:pointer;box-shadow:0 0 10px #fff;transition:all 0.2s;}
+input[type="range"]:hover::-webkit-slider-thumb{box-shadow:0 0 20px #0ff;}
+input[type="range"]:hover::-moz-range-thumb{box-shadow:0 0 20px #0ff;}
+
+#progressContainer{width:300px;height:8px;background:#222;border-radius:4px;margin-top:10px;cursor:pointer;}
+#progress{width:0%;height:100%;background:#fff;border-radius:4px;}
+
+#topSliders{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:4;color:#fff;text-align:center;display:flex;gap:20px;flex-direction:column;}
+#topSliders label{display:block;margin-bottom:5px;}
+
+#fileInput{display:none;}
+label.upload-btn{padding:8px 18px;border-radius:25px;border:1px solid #fff;display:inline-block;color:#fff;background:black;text-shadow:0 0 10px #fff,0 0 20px #fff;box-shadow:0 0 10px #fff,0 0 20px #fff;cursor:pointer;transition:all 0.3s ease;}
+label.upload-btn:hover{color:#0ff;text-shadow:0 0 20px #0ff;box-shadow:0 0 20px #0ff;}
+</style>
+</head>
+<body>
+<canvas id="visualizer"></canvas>
+
+<div id="topSliders">
+  <div>
+    <label for="bassBoost">Bass Boost</label>
+    <input type="range" id="bassBoost" min="0" max="60" step="1" value="0">
+  </div>
+  <div>
+    <label for="volumeBoost">Volume Boost</label>
+    <input type="range" id="volumeBoost" min="0" max="2" step="0.01" value="0.1">
+  </div>
+</div>
+
+<button id="songsToggle">Songs</button>
+<div id="songMenuContainer" class="song-menu">
+  <!-- Preloaded songs -->
+  <button data-file="vertude.mp3">Vertude</button>
+  <button data-file="ascension.mp3">Ascension</button>
+  <button data-file="likenootherrmx.mp3">Like No Other RMX</button>
+  <button data-file="heartattack.mp3">Heart Attack</button>
+  <button data-file="paradise.mp3">Paradise</button>
+  <button data-file="breakitoff.mp3">BreakItOff</button>
+  <button data-file="9ts.mp3">9TS</button>
+
+  <!-- Uploaded songs will be appended here -->
+  <div id="uploadedSongs"></div>
+
+  <input type="file" id="fileInput" accept="audio/*">
+  <label class="upload-btn" for="fileInput">Upload Song</label>
+</div>
+
+<div class="controls">
+  <h1 id="trackTitle">Now Playing: None</h1>
+  <button id="playPauseBtn" disabled>▶ Play</button>
+  <input type="range" id="volumeControl" min="0" max="1" step="0.01" value="1">
+  <div id="progressContainer"><div id="progress"></div></div>
+</div>
+
+<audio id="audio" crossorigin="anonymous"></audio>
+
+<script>
+const canvas = document.getElementById('visualizer');
+const ctx = canvas.getContext('2d');
+const audio = document.getElementById('audio');
+const playPauseBtn = document.getElementById('playPauseBtn');
+const trackTitle = document.getElementById('trackTitle');
+const volumeControl = document.getElementById('volumeControl');
+const progressContainer = document.getElementById('progressContainer');
+const progress = document.getElementById('progress');
+const songsToggle = document.getElementById('songsToggle');
+const songMenuContainer = document.getElementById('songMenuContainer');
+const songButtons = songMenuContainer.querySelectorAll('button[data-file]');
+const uploadedSongsContainer = document.getElementById('uploadedSongs');
+const bassBoostSlider = document.getElementById('bassBoost');
+const volumeBoostSlider = document.getElementById('volumeBoost');
+const fileInput = document.getElementById('fileInput');
+
+let isPlaying = false;
+let currentSong = "";
+let audioCtx, source, analyser, bassFilter, volumeBoost, masterGain;
+
+function resizeCanvas(){canvas.width=window.innerWidth;canvas.height=window.innerHeight;}
+window.addEventListener('resize',resizeCanvas);resizeCanvas();
+
+async function initAudio(){
+    if(!audioCtx){
+        audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+        source = audioCtx.createMediaElementSource(audio);
+
+        bassFilter = audioCtx.createBiquadFilter();
+        bassFilter.type='lowshelf';
+        bassFilter.frequency.value=150;
+        bassFilter.gain.value=bassBoostSlider.value;
+
+        volumeBoost = audioCtx.createGain();
+        volumeBoost.gain.value=volumeBoostSlider.value;
+
+        masterGain = audioCtx.createGain();
+        masterGain.gain.value=1;
+
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize=256;
+
+        source.connect(bassFilter);
+        bassFilter.connect(volumeBoost);
+        volumeBoost.connect(masterGain);
+        masterGain.connect(analyser);
+        analyser.connect(audioCtx.destination);
+    }
+    if(audioCtx.state === 'suspended'){ await audioCtx.resume(); }
+}
+
+playPauseBtn.addEventListener('click', async () => {
+    if(!currentSong) return;
+    await initAudio();
+    if(isPlaying){
+        audio.pause();
+        playPauseBtn.textContent='▶ Play';
+    } else {
+        await audio.play().catch(async err => { await audioCtx.resume(); audio.play(); });
+        playPauseBtn.textContent='⏸ Pause';
+    }
+    isPlaying = !isPlaying;
+});
+
+volumeControl.addEventListener('input',()=>{audio.volume=volumeControl.value;});
+bassBoostSlider.addEventListener('input',()=>{if(bassFilter) bassFilter.gain.value=bassBoostSlider.value;});
+volumeBoostSlider.addEventListener('input',()=>{if(volumeBoost) volumeBoost.gain.value=volumeBoostSlider.value;});
+
+// toggle menu
+songsToggle.addEventListener('click',()=>songMenuContainer.classList.toggle('show'));
+
+// progress bar
+function updateProgress(){if(audio.duration)progress.style.width=(audio.currentTime/audio.duration*100)+'%';requestAnimationFrame(updateProgress);}
+updateProgress();
+progressContainer.addEventListener('click',e=>{if(!audio.duration)return; const rect=progressContainer.getBoundingClientRect(); audio.currentTime=((e.clientX-rect.left)/rect.width)*audio.duration;});
+
+// song buttons
+function updateActiveSong(){songButtons.forEach(btn=>btn.classList.toggle('active',btn.getAttribute('data-file')===currentSong));}
+songButtons.forEach(btn=>btn.addEventListener('click',async ()=>{
+    const file=btn.getAttribute('data-file');
+    currentSong=file;
+    trackTitle.textContent=`Now Playing: ${file.split('/').pop().replace(/\.[^/.]+$/,'')}`;
+    audio.crossOrigin='anonymous';
+    audio.src=encodeURI(file);
+    playPauseBtn.disabled=false;
+    isPlaying=false;
+    playPauseBtn.textContent='▶ Play';
+    updateActiveSong();
+    songMenuContainer.classList.remove('show');
+    await initAudio();
+}));
+
+// uploaded songs
+fileInput.addEventListener('change', async e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    audio.src = url;
+    currentSong = url;
+
+    const btn = document.createElement('button');
+    btn.textContent = file.name.replace(/\.[^/.]+$/, '');
+    btn.setAttribute('data-file', url);
+    uploadedSongsContainer.appendChild(btn);
+
+    btn.addEventListener('click', async () => {
+        currentSong = url;
+        trackTitle.textContent = `Now Playing: ${btn.textContent}`;
+        audio.src = url;
+        playPauseBtn.disabled = false;
+        isPlaying = false;
+        playPauseBtn.textContent = '▶ Play';
+        updateActiveSong();
+        songMenuContainer.classList.remove('show');
+        await initAudio();
+    });
+
+    trackTitle.textContent = `Now Playing: ${file.name.replace(/\.[^/.]+$/,'')}`;
+    playPauseBtn.disabled = false;
+    isPlaying = false;
+    playPauseBtn.textContent = '▶ Play';
+    updateActiveSong();
+    songMenuContainer.classList.remove('show');
+    await initAudio();
+});
+
+// visualizer
+const starsUp=[], starsDown=[];
+for(let i=0;i<150;i++){starsUp.push({x:Math.random()*canvas.width,y:Math.random()*canvas.height,size:Math.random()*2+0.5,speed:Math.random()*0.5+0.1,baseAlpha:Math.random()*0.5+0.5,alpha:0});}
+for(let i=0;i<50;i++){starsDown.push({x:Math.random()*canvas.width,y:Math.random()*canvas.height,size:Math.random()*2+0.5,speed:Math.random()*0.3+0.05,baseAlpha:Math.random()*0.5+0.5,alpha:0});}
+
+const bufferLength = 128;
+const dataArray = new Uint8Array(bufferLength);
+
+function draw(){
+    requestAnimationFrame(draw);
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    if(analyser) analyser.getByteFrequencyData(dataArray);
+    const avgAmp = analyser ? dataArray.reduce((a,v)=>a+v,0)/dataArray.length/255 : 0;
+
+    // stars
+    starsUp.forEach(s=>{s.alpha=Math.min(Math.max(s.baseAlpha+(Math.random()-0.5)*0.05+avgAmp*0.2,0),1);ctx.fillStyle=`rgba(255,255,255,${s.alpha})`;ctx.beginPath();ctx.arc(s.x,s.y,s.size,0,Math.PI*2);ctx.fill();s.y-=s.speed;if(s.y<0)s.y=canvas.height;});
+    starsDown.forEach(s=>{s.alpha=Math.min(Math.max(s.baseAlpha+(Math.random()-0.5)*0.05+avgAmp*0.2,0),1);ctx.fillStyle=`rgba(255,255,255,${s.alpha})`;ctx.beginPath();ctx.arc(s.x,s.y,s.size,0,Math.PI*2);ctx.fill();s.y+=s.speed;if(s.y>canvas.height)s.y=0;});
+
+    // equalizer bars
+    const barWidth=12, spacing=6, bottomY=canvas.height/2+120, hueOffset=performance.now()/20;
+    const leftCenter=canvas.width/2-200;
+    const rightCenter=canvas.width/2+200;
+    for(let i=0;i<bufferLength;i++){
+        const value=dataArray[i];
+        const reactivity=1-Math.abs(i-bufferLength/2)/(bufferLength/2);
+        const barHeight=value*2*(0.5+reactivity*0.5)+Math.sin(performance.now()/100+i)*5+avgAmp*15;
+        const hue=i*3+hueOffset;
+        ctx.shadowColor=`hsl(${hue},100%,50%)`; ctx.shadowBlur=8+avgAmp*5;
+        ctx.fillStyle=`hsl(${hue},100%,50%)`;
+        ctx.fillRect(leftCenter-i*(barWidth+spacing),bottomY-barHeight,barWidth,barHeight);
+        ctx.fillRect(rightCenter+i*(barWidth+spacing),bottomY-barHeight,barWidth,barHeight);
+    }
+
+    // center pulsing circles
+    const circleX=canvas.width/2, circleY=canvas.height/2-20, baseRadius=120, waveCount=3, beatThreshold=0.15, pulse=avgAmp>beatThreshold?avgAmp*50:0;
+    for(let w=0;w<waveCount;w++){
+        ctx.beginPath();
+        const radiusOffset=w*3;
+        for(let deg=0;deg<=360;deg+=2){
+            const rad=deg*Math.PI/180;
+            const r=baseRadius+radiusOffset+pulse;
+            const x=circleX+r*Math.cos(rad);
+            const y=circleY+r*Math.sin(rad);
+            if(deg===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+        }
+        ctx.closePath();
+        const hue=performance.now()/20+w*30;
+        ctx.strokeStyle=`hsl(${hue},100%,50%)`;
+        ctx.lineWidth=2;
+        ctx.shadowColor=ctx.strokeStyle;
+        ctx.shadowBlur=8+avgAmp*5;
+        ctx.stroke();
+    }
+}
+draw();
+</script>
+</body>
+</html>
